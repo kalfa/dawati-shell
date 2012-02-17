@@ -25,13 +25,8 @@
 #include <glib.h>
 #include <glib-object.h>
 
-typedef struct {
-    void (*callback)(GList *apps, gpointer user_data);
-    gpointer data;
-} mnb_launcher_zg_utils_cb_struct;
-
+typedef void (*MnbLauncherZgUtilsGetMostUsedAppsCB)(GList *apps, gpointer user_data);
 void mnb_launcher_zg_utils_send_launch_event(const gchar* executable, const gchar* title);
-
-void mnb_launcher_zg_utils_get_most_used_apps(mnb_launcher_zg_utils_cb_struct *data);
+void mnb_launcher_zg_utils_get_most_used_apps (MnbLauncherZgUtilsGetMostUsedAppsCB cb, gpointer data);
 
 #endif

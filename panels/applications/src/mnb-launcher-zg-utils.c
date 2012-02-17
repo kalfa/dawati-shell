@@ -19,18 +19,28 @@
  * Inc., 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <config.h>
 #include "mnb-launcher-zg-utils.h"
+
+#include <string.h>
+
 #include <zeitgeist.h>
 
-ZeitgeistLog *log = NULL;
+typedef struct
+{
+  MnbLauncherZgUtilsGetMostUsedAppsCB cb;
+  gpointer user_data;
+} MnbLauncherZgUtilsGetMostUsedAppsStruct;
+
+static ZeitgeistLog *zg_log = NULL;
 
 void
 mnb_launcher_zg_utils_send_launch_event (const gchar* executable, const gchar* title) {
 
     char *exec = g_strconcat ("application://", executable, ".desktop", NULL);
     
-    if (log == NULL) 
-        log = zeitgeist_log_get_default ();
+//  if (zg_log == NULL) 
+//      zg_log = zeitgeist_log_get_default ();
 
     ZeitgeistEvent *event = zeitgeist_event_new_full (
         ZEITGEIST_ZG_ACCESS_EVENT,
@@ -47,21 +57,20 @@ mnb_launcher_zg_utils_send_launch_event (const gchar* executable, const gchar* t
         ), 
         NULL);
 
-    zeitgeist_log_insert_events_no_reply (log, event, NULL);
+    zeitgeist_log_insert_events_no_reply (zg_log, event, NULL);
     g_free (exec);
 }
 
 static void 
-mnb_launcher_zg_utils_get_most_used_apps_cb (ZeitgeistLog  *log,
+mnb_launcher_zg_utils_get_most_used_apps_cb (ZeitgeistLog  *zg_log,
                                       GAsyncResult *res,
                                       gpointer user_data) {
   ZeitgeistResultSet *events;
   GError             *error;
-  gint                i;
 
   GList* apps = NULL;
-  events = zeitgeist_log_find_events_finish (log, res, error);
-  mnb_launcher_zg_utils_cb_struct *cb_data = (mnb_launcher_zg_utils_cb_struct*) user_data;
+  events = zeitgeist_log_find_events_finish (zg_log, res, &error);
+  MnbLauncherZgUtilsGetMostUsedAppsStruct *cb_data = user_data;
 
   if (error == NULL)
     {
@@ -72,7 +81,7 @@ mnb_launcher_zg_utils_get_most_used_apps_cb (ZeitgeistLog  *log,
         
         event = zeitgeist_result_set_next (events);
         subject = zeitgeist_event_get_subject (event, 0);
-        char* app_uri = zeitgeist_subject_get_uri (subject);
+        const char* app_uri = zeitgeist_subject_get_uri (subject);
         int prefix_len = strlen("application://");
         int suffix_len = strlen(".desktop");
         int len = strlen(app_uri);
@@ -88,21 +97,25 @@ mnb_launcher_zg_utils_get_most_used_apps_cb (ZeitgeistLog  *log,
       return;
     }
 
-  cb_data->callback(apps, cb_data->data);
-  
+  cb_data->cb(apps, cb_data->user_data);
+
+  g_free(cb_data);
   g_object_unref(events);
   g_list_free_full(apps, g_free);
-  g_free(cb_data->data);
-  g_free(cb_data);
 }
 
 void
-mnb_launcher_zg_utils_get_most_used_apps (mnb_launcher_zg_utils_cb_struct *data) {
+mnb_launcher_zg_utils_get_most_used_apps (MnbLauncherZgUtilsGetMostUsedAppsCB cb,
+                                          gpointer user_data) {
 
-  if (log == NULL) 
-    log = zeitgeist_log_get_default ();
-    
   GPtrArray          *templates;
+  MnbLauncherZgUtilsGetMostUsedAppsStruct *data;
+
+
+//  if (zg_log == NULL) 
+//    zg_log = zeitgeist_log_get_default ();
+  
+
 
   templates = g_ptr_array_new ();
   g_ptr_array_add (templates, zeitgeist_event_new_full (
@@ -118,14 +131,17 @@ mnb_launcher_zg_utils_get_most_used_apps (mnb_launcher_zg_utils_cb_struct *data)
               NULL,
               NULL // storage - auto-guess
     ), NULL));
-  
-  zeitgeist_log_find_events (log,
+ 
+  data = g_new0 (MnbLauncherZgUtilsGetMostUsedAppsStruct, 1);
+  data->cb = cb;
+  data->user_data = user_data;
+
+  zeitgeist_log_find_events (zg_log,
                          zeitgeist_time_range_new_to_now (),
                          templates,
                          ZEITGEIST_STORAGE_STATE_ANY,
                          12,
                          4,
                          NULL,
-                         (GAsyncReadyCallback)mnb_launcher_zg_utils_get_most_used_apps_cb,
-                         data);
+                         mnb_launcher_zg_utils_get_most_used_apps_cb, data);
 }

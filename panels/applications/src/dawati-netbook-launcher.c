@@ -582,19 +582,21 @@ mnb_launcher_show_most_cb (GList *apps, gpointer user_data)
 {
   mnb_launcher_show_most_cb_user_data *data = (mnb_launcher_show_most_cb_user_data*) user_data;
   MnbLauncher *self = data->launcher;
-  gboolean show = data->show;
   MnbLauncherPrivate *priv = GET_PRIVATE (self);
   GSList *iter;
   
   for (iter = priv->launchers; iter; iter = iter->next)
     {
       MnbLauncherButton *button = MNB_LAUNCHER_BUTTON (iter->data);
-      char* exec = mnb_launcher_button_get_executable(button);
+      const char* exec = mnb_launcher_button_get_executable(button);
       if (g_list_find_custom (apps, exec, (GCompareFunc) g_strcmp0) != NULL)
           clutter_actor_show (CLUTTER_ACTOR (button));
       else
           clutter_actor_hide (CLUTTER_ACTOR (button));
     }
+
+  g_object_unref (data->launcher);
+  g_free (data);
 }
 
 static void 
@@ -608,20 +610,15 @@ mnb_launcher_show_most (MnbLauncher *self, gboolean show)
     mnb_launcher_show_most_cb_user_data *data;
     
     data = g_new0(mnb_launcher_show_most_cb_user_data, 1);
-    data->launcher = self;
+    data->launcher = g_object_ref (self);
     data->show = show;
-    
-    mnb_launcher_zg_utils_cb_struct *cb_data;
-    cb_data = g_new0(mnb_launcher_zg_utils_cb_struct, 1);
-    cb_data->callback = mnb_launcher_show_most_cb;
-    cb_data->data = data;
     
     for (iter = priv->launchers; iter; iter = iter->next)
     {
       MnbLauncherButton *button = MNB_LAUNCHER_BUTTON (iter->data);
       clutter_actor_hide (CLUTTER_ACTOR (button));
     }
-    mnb_launcher_zg_utils_get_most_used_apps(cb_data);
+    mnb_launcher_zg_utils_get_most_used_apps(mnb_launcher_show_most_cb, data);
   }
   else {
     for (iter = priv->launchers; iter; iter = iter->next)
