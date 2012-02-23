@@ -36,11 +36,14 @@ G_DEFINE_TYPE (PengeCalendarPane, penge_calendar_pane, MX_TYPE_WIDGET)
 
 #define GET_PRIVATE(o) ((PengeCalendarPane *)o)->priv
 #define CALENDAR_ICON THEMEDIR "/calendar-icon-%d.png"
-
+#define SEPARATOR_FILENAME THEMEDIR "/single-div-line.png"
 
 struct _PengeCalendarPanePrivate {
   ClutterActor *events_pane;
   ClutterActor *tasks_pane;
+
+  ClutterActor *mid_separator; /* between cals and tasks */
+  ClutterActor *lower_separator; /* below tasks */
 
   guint refresh_timeout_id;
   guint8 day_of_month;
@@ -48,7 +51,6 @@ struct _PengeCalendarPanePrivate {
   ClutterActor *calendar_tex;
   ClutterActor *events_header_table;
   ClutterActor *tasks_header_table;
-  ClutterActor *separator;
 };
 
 static void
@@ -100,6 +102,8 @@ penge_calendar_pane_get_preferred_width (ClutterActor *actor,
   PengeCalendarPanePrivate *priv = GET_PRIVATE (actor);
   gfloat header_nat, header_min;
   gfloat events_nat, events_min;
+  gfloat m_separator_nat, m_separator_min;
+  gfloat l_separator_nat, l_separator_min;
   gfloat tasks_nat, tasks_min;
   MxPadding padding = { 0, };
 
@@ -115,17 +119,29 @@ penge_calendar_pane_get_preferred_width (ClutterActor *actor,
                                      &events_min,
                                      &events_nat);
 
+  clutter_actor_get_preferred_width (CLUTTER_ACTOR (priv->mid_separator),
+                                     for_height,
+                                     &m_separator_min,
+                                     &m_separator_nat);
+
+  clutter_actor_get_preferred_width (CLUTTER_ACTOR (priv->lower_separator),
+                                     for_height,
+                                     &l_separator_min,
+                                     &l_separator_nat);
+
   clutter_actor_get_preferred_width (CLUTTER_ACTOR (priv->tasks_pane),
                                      for_height,
                                      &tasks_min,
                                      &tasks_nat);
 
   if (min_width_p)
-    *min_width_p = MAX (header_min, MAX (events_min, tasks_min)) +
+    *min_width_p = MAX (header_min, MAX (l_separator_min, MAX (m_separator_min,
+            MAX (events_min, tasks_min)))) +
       padding.left + padding.right;
 
   if (nat_width_p)
-    *nat_width_p = MAX (header_nat, MAX (events_nat, tasks_nat)) +
+    *nat_width_p = MAX (header_nat, MAX (l_separator_nat, MAX (m_separator_nat,
+            MAX (events_nat, tasks_nat)))) +
       padding.left + padding.right;
 }
 
@@ -138,7 +154,8 @@ penge_calendar_pane_get_preferred_height (ClutterActor *actor,
   PengeCalendarPanePrivate *priv = GET_PRIVATE (actor);
   gfloat events_header_nat, events_header_min;
   gfloat tasks_header_nat, tasks_header_min;
-  gfloat separator_nat, separator_min;
+  gfloat m_separator_nat, m_separator_min;
+  gfloat l_separator_nat, l_separator_min;
   gfloat events_nat, events_min;
   gfloat tasks_nat, tasks_min;
   MxPadding padding = { 0, };
@@ -155,10 +172,15 @@ penge_calendar_pane_get_preferred_height (ClutterActor *actor,
                                       &events_min,
                                       &events_nat);
 
-  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->separator),
+  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->mid_separator),
                                       for_width,
-                                      &separator_min,
-                                      &separator_nat);
+                                      &m_separator_min,
+                                      &m_separator_nat);
+
+  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->lower_separator),
+                                      for_width,
+                                      &l_separator_min,
+                                      &l_separator_nat);
 
   clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->tasks_header_table),
                                       for_width,
@@ -171,12 +193,14 @@ penge_calendar_pane_get_preferred_height (ClutterActor *actor,
                                       &tasks_nat);
 
   if (min_height_p)
-    *min_height_p = events_header_min + events_min + separator_min +
-      tasks_header_min + tasks_min + padding.top + padding.bottom;
+    *min_height_p = events_header_min + events_min + tasks_header_min +
+      m_separator_min + l_separator_min + tasks_min + padding.top +
+      padding.bottom;
 
   if (nat_height_p)
     *nat_height_p = events_header_nat + events_nat + tasks_header_nat +
-      separator_nat + tasks_nat + padding.top + padding.bottom;
+      m_separator_nat + l_separator_nat + tasks_nat + padding.top +
+      padding.bottom;
 }
 
 static void
@@ -189,9 +213,10 @@ penge_calendar_pane_map (ClutterActor *actor)
 
   clutter_actor_map (CLUTTER_ACTOR (priv->events_header_table));
   clutter_actor_map (CLUTTER_ACTOR (priv->events_pane));
-  clutter_actor_map (CLUTTER_ACTOR (priv->separator));
+  clutter_actor_map (CLUTTER_ACTOR (priv->mid_separator));
   clutter_actor_map (CLUTTER_ACTOR (priv->tasks_header_table));
   clutter_actor_map (CLUTTER_ACTOR (priv->tasks_pane));
+  clutter_actor_map (CLUTTER_ACTOR (priv->lower_separator));
 }
 
 static void
@@ -204,9 +229,10 @@ penge_calendar_pane_unmap (ClutterActor *actor)
 
   clutter_actor_unmap (CLUTTER_ACTOR (priv->events_header_table));
   clutter_actor_unmap (CLUTTER_ACTOR (priv->events_pane));
-  clutter_actor_unmap (CLUTTER_ACTOR (priv->separator));
+  clutter_actor_unmap (CLUTTER_ACTOR (priv->mid_separator));
   clutter_actor_unmap (CLUTTER_ACTOR (priv->tasks_header_table));
   clutter_actor_unmap (CLUTTER_ACTOR (priv->tasks_pane));
+  clutter_actor_unmap (CLUTTER_ACTOR (priv->lower_separator));
 }
 
 static void
@@ -215,8 +241,8 @@ penge_calendar_pane_allocate (ClutterActor          *actor,
                               ClutterAllocationFlags flags)
 {
   PengeCalendarPanePrivate *priv = GET_PRIVATE (actor);
-  gfloat events_nat_h, tasks_nat_h, separator_nat_h, events_header_nat_h,
-         tasks_header_nat_h;
+  gfloat events_nat_h, tasks_nat_h, m_separator_nat_h, l_separator_nat_h,
+         events_header_nat_h, tasks_header_nat_h;
   gfloat width, height, remaining_height, last_y;
   gfloat tasks_available_h, events_available_h;
   ClutterActorBox child_box;
@@ -240,10 +266,15 @@ penge_calendar_pane_allocate (ClutterActor          *actor,
                                       NULL,
                                       &events_nat_h);
 
-  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->separator),
+  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->mid_separator),
                                       width,
                                       NULL,
-                                      &separator_nat_h);
+                                      &m_separator_nat_h);
+
+  clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->lower_separator),
+                                      width,
+                                      NULL,
+                                      &l_separator_nat_h);
 
   clutter_actor_get_preferred_height (CLUTTER_ACTOR (priv->tasks_header_table),
                                       width,
@@ -265,8 +296,8 @@ penge_calendar_pane_allocate (ClutterActor          *actor,
                           flags);
 
   remaining_height = height - padding.top - padding.bottom -
-                     events_header_nat_h - separator_nat_h -
-                     tasks_header_nat_h;
+                     events_header_nat_h - m_separator_nat_h -
+                     l_separator_nat_h - tasks_header_nat_h;
 
   if (tasks_nat_h <= (remaining_height / 2.0))
   {
@@ -295,9 +326,9 @@ penge_calendar_pane_allocate (ClutterActor          *actor,
   child_box.x1 = padding.left;
   child_box.x2 = width - padding.right;
   child_box.y1 = last_y;
-  child_box.y2 = child_box.y1 + separator_nat_h;
+  child_box.y2 = child_box.y1 + m_separator_nat_h;
   last_y = child_box.y2;
-  clutter_actor_allocate (CLUTTER_ACTOR (priv->separator),
+  clutter_actor_allocate (CLUTTER_ACTOR (priv->mid_separator),
                           &child_box,
                           flags);
 
@@ -320,6 +351,14 @@ penge_calendar_pane_allocate (ClutterActor          *actor,
                           &child_box,
                           flags);
 
+  child_box.x1 = padding.left;
+  child_box.x2 = width - padding.right;
+  child_box.y1 = last_y;
+  child_box.y2 = child_box.y1 + l_separator_nat_h;
+  last_y = child_box.y2;
+  clutter_actor_allocate (CLUTTER_ACTOR (priv->lower_separator),
+                          &child_box,
+                          flags);
 }
 
 static void
@@ -332,9 +371,10 @@ penge_calendar_pane_paint (ClutterActor *actor)
 
   clutter_actor_paint (CLUTTER_ACTOR (priv->events_header_table));
   clutter_actor_paint (CLUTTER_ACTOR (priv->events_pane));
-  clutter_actor_paint (CLUTTER_ACTOR (priv->separator));
+  clutter_actor_paint (CLUTTER_ACTOR (priv->mid_separator));
   clutter_actor_paint (CLUTTER_ACTOR (priv->tasks_header_table));
   clutter_actor_paint (CLUTTER_ACTOR (priv->tasks_pane));
+  clutter_actor_paint (CLUTTER_ACTOR (priv->lower_separator));
 }
 
 static void
@@ -348,9 +388,10 @@ penge_calendar_pane_pick (ClutterActor       *actor,
 
   clutter_actor_paint (CLUTTER_ACTOR (priv->events_header_table));
   clutter_actor_paint (CLUTTER_ACTOR (priv->events_pane));
-  clutter_actor_paint (CLUTTER_ACTOR (priv->separator));
+  clutter_actor_paint (CLUTTER_ACTOR (priv->mid_separator));
   clutter_actor_paint (CLUTTER_ACTOR (priv->tasks_header_table));
   clutter_actor_paint (CLUTTER_ACTOR (priv->tasks_pane));
+  clutter_actor_paint (CLUTTER_ACTOR (priv->lower_separator));
 }
 
 static void
@@ -483,7 +524,8 @@ penge_calendar_pane_init (PengeCalendarPane *self)
   ClutterActor *label;
   ClutterActor *tasks_icon;
   ClutterActor *button;
-  ClutterActor *separator;
+  ClutterActor *separator_l, *separator_m;
+  GError *error = NULL;
 
   self->priv = priv;
 
@@ -494,6 +536,7 @@ penge_calendar_pane_init (PengeCalendarPane *self)
   mx_table_set_column_spacing (MX_TABLE (priv->events_header_table), 8);
   mx_stylable_set_style_class (MX_STYLABLE (priv->events_header_table),
                                "PengeEventsPaneHeader");
+
   priv->calendar_tex = clutter_texture_new ();
   /* Need to fix the size to avoid being squashed */
   clutter_actor_set_size (priv->calendar_tex, 32, 33);
@@ -535,6 +578,21 @@ penge_calendar_pane_init (PengeCalendarPane *self)
                                       "y-align", MX_ALIGN_MIDDLE,
                                       "x-expand", FALSE,
                                       NULL);
+
+  /* Events/Tasks separator */
+  priv->mid_separator = mx_frame_new ();
+  mx_stylable_set_style_class (MX_STYLABLE (priv->mid_separator),
+                               "PengeCalendarPaneSeparatorMiddle");
+
+  separator_m = clutter_texture_new_from_file (SEPARATOR_FILENAME, &error);
+  if (error != NULL)
+    {
+      g_warning ("couldn't open separator texture: %s", error->message);
+      g_clear_error (&error);
+    }
+  clutter_actor_set_size (separator_m, 250, 1);
+  clutter_container_add_actor (CLUTTER_CONTAINER (priv->mid_separator), separator_m);
+
   /* Tasks header */
   priv->tasks_header_table = mx_table_new ();
   mx_table_set_column_spacing (MX_TABLE (priv->tasks_header_table), 8);
@@ -588,30 +646,31 @@ penge_calendar_pane_init (PengeCalendarPane *self)
   priv->tasks_pane = g_object_new (PENGE_TYPE_TASKS_PANE,
                                    NULL);
 
-  /* Separator */
-  priv->separator = mx_table_new ();
-  separator = mx_frame_new ();
-  mx_stylable_set_style_class (MX_STYLABLE (separator),
-                               "PengeCalendarPaneSeparator");
-  mx_table_add_actor_with_properties (MX_TABLE (priv->separator),
-                                      separator,
-                                      0, 0,
-                                      "y-expand", FALSE,
-                                      "y-fill", FALSE,
-                                      "x-expand", TRUE,
-                                      "x-fill", TRUE,
-                                      "x-align", MX_ALIGN_MIDDLE,
-                                      NULL);
+  /* Tasks/WhateverThereIsBelow separator */
+  priv->lower_separator = mx_frame_new ();
+  mx_stylable_set_style_class (MX_STYLABLE (priv->lower_separator),
+                               "PengeCalendarPaneSeparatorLower");
+  separator_l = clutter_texture_new_from_file (SEPARATOR_FILENAME, &error);
+  if (error != NULL)
+    {
+      g_warning ("couldn't open separator texture: %s", error->message);
+      g_clear_error (&error);
+    }
+  clutter_actor_set_size (separator_l, 250, 1);
+  clutter_container_add_actor (CLUTTER_CONTAINER (priv->lower_separator), separator_l);
+
 
   clutter_actor_set_parent (CLUTTER_ACTOR (priv->events_header_table),
                             CLUTTER_ACTOR (self));
   clutter_actor_set_parent (CLUTTER_ACTOR (priv->events_pane),
                             CLUTTER_ACTOR (self));
-  clutter_actor_set_parent (CLUTTER_ACTOR (priv->separator),
+  clutter_actor_set_parent (CLUTTER_ACTOR (priv->mid_separator),
                             CLUTTER_ACTOR (self));
   clutter_actor_set_parent (CLUTTER_ACTOR (priv->tasks_header_table),
                             CLUTTER_ACTOR (self));
   clutter_actor_set_parent (CLUTTER_ACTOR (priv->tasks_pane),
+                            CLUTTER_ACTOR (self));
+  clutter_actor_set_parent (CLUTTER_ACTOR (priv->lower_separator),
                             CLUTTER_ACTOR (self));
 
   on_the_next_hour = jana_ecal_utils_time_now_local ();
