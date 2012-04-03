@@ -26,6 +26,8 @@
 #include "mnb-home-grid.h"
 #include "mnb-home-grid-child.h"
 #include "mnb-home-grid-private.h"
+#include "mnb-home-widget.h"
+#include "utils.h"
 
 #include <math.h>
 #include <string.h>
@@ -699,6 +701,10 @@ stage_button_release_event_cb (ClutterActor       *stage,
   mnb_home_grid_remove_item_cells (self, priv->selection);
   meta->col = priv->selection_col;
   meta->row = priv->selection_row;
+  g_object_set (priv->selection,
+      "column", meta->col,
+      "row", meta->row,
+      NULL);
   mnb_home_grid_insert_item_cells (self, priv->selection);
 
   /* Animate selected actor to the final position */
@@ -773,12 +779,13 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
         clutter_container_get_child_meta (CLUTTER_CONTAINER (self), child);
       gfloat child_width, child_height;
 
-      priv->pointer_x = event->x;
-      priv->pointer_y = event->y;
-
       /* be sure it's a MnbHomeWidget, it's a programming error if we obtain
        * something else */
       g_assert (MNB_IS_HOME_WIDGET (child));
+
+      priv->pointer_x = event->x;
+      priv->pointer_y = event->y;
+
       priv->selection = child;
       clutter_actor_raise_top (priv->selection);
 
@@ -988,6 +995,8 @@ mnb_home_grid_paint (ClutterActor *self)
   gdouble x, y;
   ClutterActorBox box_b, child_b;
 
+  DEBUG ("PAINT");
+
   CLUTTER_ACTOR_CLASS (mnb_home_grid_parent_class)->paint (self);
 
   if (priv->hadjustment)
@@ -1033,11 +1042,12 @@ mnb_home_grid_paint (ClutterActor *self)
             }
         }
     }
-  else
+  else /* !edit_mode */
     {
       for (l = priv->children; l != NULL; l = g_list_next (l))
         {
           ClutterActor *child = CLUTTER_ACTOR (l->data);
+          gchar *p;
 
           clutter_actor_get_allocation_box (child, &child_b);
 
@@ -1364,6 +1374,7 @@ void
 mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
 {
   MnbHomeGridPrivate *priv;
+  GList *l = NULL;
 
   g_return_if_fail (MNB_IS_HOME_GRID (self));
 
@@ -1373,6 +1384,16 @@ mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
     return;
 
   priv->in_edit_mode = value;
+  g_object_notify (G_OBJECT (self), "edit-mode");
+
+  /* FIXME: should it be the children to actively connect to grid's
+   * notify::edit-mode? */
+  DEBUG ("children going to edit-mode %d", value);
+  for (l = priv->children; l != NULL; l = g_list_next (l))
+    g_object_set (G_OBJECT (l->data),
+        "edit-mode", value,
+        NULL);
+
   clutter_actor_queue_redraw (CLUTTER_ACTOR (self));
 }
 
