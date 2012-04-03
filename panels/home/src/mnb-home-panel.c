@@ -26,6 +26,11 @@
 
 G_DEFINE_TYPE (MnbHomePanel, mnb_home_panel, MX_TYPE_WIDGET);
 
+#define GSETTINGS_HOME_ID "org.dawati.shell.home"
+#define GSETTINGS_HOME_PATH_PREFIX "/org/dawati/shell/home/"
+#define GSETTINGS_HOME_BACKGROUND_KEY "background-image"
+#define GSETTINGS_HOME_SIZE_KEY "size"
+
 #define BUTTON_HOVER_TIMEOUT (750)
 #define TAB_SWITCHING_TIMEOUT (400)
 #define NB_TABS (5)
@@ -42,6 +47,7 @@ struct _MnbHomePanelPrivate
   MplPanelClient *panel_client;
   ClutterActor   *background;
   ClutterActor   *vbox;
+  ClutterActor   *dialog_box;
 
   ClutterActor   *scrollview; /* Scroll view for the grid */
   ClutterActor   *grid;
@@ -50,6 +56,9 @@ struct _MnbHomePanelPrivate
   guint           timeout_switch_tab;
   gint            workspace_dest;
   MxButton       *workspace_button;
+
+  GSettings      *settings;
+  GList          *widgets;
 };
 
 static void
@@ -246,7 +255,15 @@ mnb_home_panel_dispose (GObject *self)
 {
   MnbHomePanelPrivate *priv = MNB_HOME_PANEL (self)->priv;
 
-  g_object_unref (priv->panel_client);
+  g_clear_object (priv->panel_client);
+  g_clear_object (priv->background);
+  g_clear_object (priv->grid);
+  g_clear_object (priv->settings);
+  if (priv->widgets != NULL)
+    {
+      g_list_free_full (priv->widgets, g_free);
+      priv->widgets = NULL;
+    }
 
   G_OBJECT_CLASS (mnb_home_panel_parent_class)->dispose (self);
 }
@@ -324,18 +341,43 @@ mnb_home_panel_init (MnbHomePanel *self)
 {
   MnbHomePanelPrivate *priv;
   ClutterActor *edit, *item, *box;
-  ClutterColor *color;
   gint i;
+  GVariant *as;
+  GVariantIter iter;
+  guint grid_width, grid_height;
+  guint col, row;
+  gchar *background_file, *path;
+  GError *error = NULL;
+
 
   self->priv = priv = G_TYPE_INSTANCE_GET_PRIVATE (self, MNB_TYPE_HOME_PANEL,
                                                    MnbHomePanelPrivate);
 
+  priv->settings = g_settings_new_with_path (GSETTINGS_HOME_ID,
+      GSETTINGS_HOME_PATH_PREFIX);
+
   /* background */
-  /* FIXME: make this awesomer */
-  priv->background = mx_image_new ();
-  mx_image_set_from_file (MX_IMAGE (priv->background),
-                          "/usr/share/backgrounds/gnome/Aqua.jpg", NULL);
-  clutter_actor_add_child (CLUTTER_ACTOR (self), priv->background);
+  /* FIXME: It crasesh when the gsettings key is changed and the GObject is
+   * constructed empty. The initial image is set up correctly but on change it
+   * returns Bus error. Might be a binding problem.
+   * To work it around I'm giving the texture an initial
+   * image. This works fine. */
+  background_file = g_settings_get_string (priv->settings, "background-image");
+  self->priv->background = clutter_texture_new_from_file (background_file, &error);
+  if (error != NULL)
+    {
+      g_warning ("couldn't open background image %s: %s",
+          background_file,
+          error->message);
+      g_clear_error (&error);
+    }
+
+  g_free (background_file);
+
+  g_settings_bind (priv->settings, GSETTINGS_HOME_BACKGROUND_KEY,
+      self->priv->background, "filename",
+      G_SETTINGS_BIND_GET);
+  clutter_actor_add_child (CLUTTER_ACTOR (self), self->priv->background);
 
   priv->vbox = mx_box_layout_new_with_orientation (MX_ORIENTATION_VERTICAL);
   clutter_actor_add_child (CLUTTER_ACTOR (self), priv->vbox);
@@ -354,7 +396,11 @@ mnb_home_panel_init (MnbHomePanel *self)
                                               NULL);
 
   priv->grid = mnb_home_grid_new ();
-  mnb_home_grid_set_grid_size (MNB_HOME_GRID (priv->grid), 40, 6); /* TODO: auto! */
+
+  g_settings_get (priv->settings, GSETTINGS_HOME_SIZE_KEY,
+      "(uu)", &grid_width, &grid_height);
+
+  mnb_home_grid_set_grid_size (MNB_HOME_GRID (priv->grid), grid_width, grid_height); /* TODO: auto! */
   mx_bin_set_child (MX_BIN (priv->scrollview), priv->grid);
 
   g_signal_connect (priv->grid, "drag-begin",
@@ -407,34 +453,37 @@ mnb_home_panel_init (MnbHomePanel *self)
                     G_CALLBACK (toggle_edit_mode),
                     self);
 
-  /* TODO: Demo, to remove when we have actual tiles */
-  color = clutter_color_new (0x0, 0, 0, 0xff);
+  /* Load all widgets added to the panel */
+  as = g_settings_get_value (priv->settings, "widgets-list");
 
-  /**/
-  clutter_color_from_string (color, "red");
-  item = clutter_rectangle_new_with_color (color);
-  clutter_actor_set_size (item, 64, 64);
-  mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, 0, 0);
+  g_variant_iter_init (&iter, as);
+  while (g_variant_iter_next (&iter, "s", &path))
+    {
+      priv->widgets = g_list_prepend (priv->widgets, path);
 
-  /**/
-  clutter_color_from_string (color, "green");
-  item = clutter_rectangle_new_with_color (color);
-  clutter_actor_set_size (item, 64, 64);
-  mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, 3, 0);
+      item = mnb_home_widget_new (path);
+      g_object_get (item, "column", &col, "row", &row, NULL);
+      /* TODO: get the size of the widget from the object, which should have a
+       * resonable default */
+      clutter_actor_set_size (item, 138, 138);
+      mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, col, row);
+    }
 
-  /**/
-  clutter_color_from_string (color, "black");
-  item = clutter_rectangle_new_with_color (color);
-  clutter_actor_set_size (item, 50, 50);
-  mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, 3, 3);
+  g_variant_unref (as);
 
-  /**/
-  clutter_color_from_string (color, "grey");
-  item = clutter_rectangle_new_with_color (color);
-  clutter_actor_set_size (item, 138, 138);
-  mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, 5, 3);
+  /*
+  priv->dialog_box = mx_frame_new ();
+  mnb_home_new_widget_dialog_new (CLUTTER_ACTOR(priv->dialog_box));
+  mx_box_layout_insert_actor_with_properties (MX_BOX_LAYOUT (priv->vbox),
+                                              priv->dialog_box,
+                                              3,
+                                              "expand", TRUE,
+                                              "x-fill", TRUE,
+                                              "y-fill", TRUE,
+                                              NULL);
+  clutter_actor_show (priv->dialog_box);
+  */
 
-  clutter_color_free (color);
 
   clutter_actor_show_all (CLUTTER_ACTOR (self));
 }

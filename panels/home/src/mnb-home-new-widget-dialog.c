@@ -165,6 +165,10 @@ mnb_home_new_widget_dialog_init (MnbHomeNewWidgetDialog *self)
           ITEMS_ICON, icon,
           -1);
 
+      DEBUG ("icon %s/%s/%s",
+          icon,
+          peas_plugin_info_get_name (info),
+          peas_plugin_info_get_module_name (info));
       g_free (icon);
     }
 
