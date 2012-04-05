@@ -776,6 +776,9 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
       priv->pointer_x = event->x;
       priv->pointer_y = event->y;
 
+      /* be sure it's a MnbHomeWidget, it's a programming error if we obtain
+       * something else */
+      g_assert (MNB_IS_HOME_WIDGET (child));
       priv->selection = child;
       clutter_actor_raise_top (priv->selection);
 
@@ -1416,7 +1419,7 @@ mnb_home_grid_insert_actor (MnbHomeGrid  *self,
   gfloat width, height;
 
   g_return_if_fail (MNB_IS_HOME_GRID (self));
-  g_return_if_fail (CLUTTER_IS_ACTOR (actor));
+  g_return_if_fail (MNB_IS_HOME_WIDGET (actor));
 
   priv = self->priv;
 
