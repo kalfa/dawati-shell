@@ -66,6 +66,8 @@ const Example = new Lang.Class({
 
     this._settings.bind('picture', entry, 'text', 0);
 
+    entry.set_reactive (false);
+
     table.insert_actor(label, 0, 0);
     table.insert_actor(entry, 0, 1);
 
