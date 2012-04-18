@@ -98,13 +98,16 @@ mnb_home_widget_set_property (GObject *self,
     {
       case PROP_ROW:
         priv->row = g_value_get_uint (value);
+        g_settings_set_uint (priv->settings, "row", priv->row);
+        g_object_notify (self, "row");
         DEBUG ("PROP_ROW changed to %d", priv->row);
         break;
 
       case PROP_COLUMN:
         priv->column = g_value_get_uint (value);
+        g_settings_set_uint (priv->settings, "column", priv->column);
+        g_object_notify (self, "column");
         DEBUG ("PROP_COLUMN changed to %d", priv->column);
-        break;
         break;
 
       case PROP_SETTINGS_PATH:
@@ -177,7 +180,9 @@ mnb_home_widget_constructed (GObject *self)
   /* for now let's not monitor changes, no one else is supposed to change it
    */
   priv->column = g_settings_get_uint (priv->settings, "column");
+  g_object_notify (self, "column");
   priv->row = g_settings_get_uint (priv->settings, "row");
+  g_object_notify (self, "row");
 }
 
 static void
