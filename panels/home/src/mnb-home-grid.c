@@ -1480,7 +1480,7 @@ mnb_home_grid_set_grid_size (MnbHomeGrid *self, guint cols, guint rows)
 }
 
 /**
- * mnb_home_grid_set_grid_size:
+ * mnb_home_grid_get_grid_size:
  * @grid: a #MnbHomeGrid
  * @cols: (out): the number of columns
  * @rows: (out): the number of rows
