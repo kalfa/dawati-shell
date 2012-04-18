@@ -35,7 +35,7 @@ enum /* properties */
   PROP_0,
   PROP_ROW,
   PROP_COLUMN,
-  PROP_OBJECT_PATH,
+  PROP_SETTINGS_PATH,
   PROP_EDIT_MODE,
   PROP_LAST
 };
@@ -48,7 +48,7 @@ struct _MnbHomeWidgetPrivate
 
   guint row;
   guint column;
-  gchar *object_path;
+  gchar *settings_path;
   gboolean edit_mode;
   char *module;
 };
@@ -71,8 +71,8 @@ mnb_home_widget_get_property (GObject *self,
         g_value_set_uint (value, priv->column);
         break;
 
-      case PROP_OBJECT_PATH:
-        g_value_set_string (value, priv->object_path);
+      case PROP_SETTINGS_PATH:
+        g_value_set_string (value, priv->settings_path);
         break;
 
       case PROP_EDIT_MODE:
@@ -107,8 +107,8 @@ mnb_home_widget_set_property (GObject *self,
         break;
         break;
 
-      case PROP_OBJECT_PATH:
-        priv->object_path = g_strdup (g_value_get_string (value));
+      case PROP_SETTINGS_PATH:
+        priv->settings_path = g_strdup (g_value_get_string (value));
         break;
 
       case PROP_EDIT_MODE:
@@ -147,7 +147,7 @@ home_widget_module_changed (GSettings *settings,
         self->priv->engine = mnb_home_plugins_engine_dup ();
 
       self->priv->app = mnb_home_plugins_engine_create_app (self->priv->engine,
-          self->priv->module, self->priv->object_path);
+          self->priv->module, self->priv->settings_path);
       if (self->priv->app != NULL)
         dawati_home_plugins_app_init (self->priv->app);
     }
@@ -162,12 +162,12 @@ mnb_home_widget_constructed (GObject *self)
   MnbHomeWidgetPrivate *priv = MNB_HOME_WIDGET (self)->priv;
   gchar *p = NULL;
 
-  g_object_get (self, "object-path", &p, NULL);
+  g_object_get (self, "settings-path", &p, NULL);
 
   DEBUG ("widget path = '%s'", p);
 
   priv->settings = g_settings_new_with_path ("org.dawati.shell.home.plugin",
-      priv->object_path);
+      priv->settings_path);
 
   g_signal_connect (priv->settings, "changed::module",
       G_CALLBACK (home_widget_module_changed), self);
@@ -198,7 +198,7 @@ mnb_home_widget_finalize (GObject *self)
   MnbHomeWidgetPrivate *priv = MNB_HOME_WIDGET (self)->priv;
 
   g_free (priv->module);
-  g_free (priv->object_path);
+  g_free (priv->settings_path);
 
   G_OBJECT_CLASS (mnb_home_widget_parent_class)->finalize (self);
 }
@@ -231,9 +231,9 @@ mnb_home_widget_class_init (MnbHomeWidgetClass *klass)
         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_OBJECT_PATH,
-      g_param_spec_string ("object-path",
+      g_param_spec_string ("settings-path",
         "ObjectPath",
-        "The GSettings object path for the widget",
+        "The GSettings path for the widget",
         NULL,
         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS));
 
@@ -261,7 +261,7 @@ ClutterActor *
 mnb_home_widget_new (const char* path)
 {
   return g_object_new (MNB_TYPE_HOME_WIDGET,
-      "object-path", path,
+      "settings-path", path,
       NULL);
 }
 
