@@ -747,6 +747,8 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
       CLUTTER_ACTOR_CLASS (mnb_home_grid_parent_class)->button_press_event (self,
                                                                             event);
 
+  DEBUG ("PRESSED");
+
   mx_widget_get_padding (MX_WIDGET (grid), &priv->tmp_padding);
 
   stage = clutter_actor_get_stage (self);
@@ -779,12 +781,13 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
         clutter_container_get_child_meta (CLUTTER_CONTAINER (self), child);
       gfloat child_width, child_height;
 
-      priv->pointer_x = event->x;
-      priv->pointer_y = event->y;
-
       /* be sure it's a MnbHomeWidget, it's a programming error if we obtain
        * something else */
       g_assert (MNB_IS_HOME_WIDGET (child));
+
+      priv->pointer_x = event->x;
+      priv->pointer_y = event->y;
+
       priv->selection = child;
       clutter_actor_raise_top (priv->selection);
 
@@ -808,6 +811,48 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
     }
 
   return TRUE;
+}
+
+void
+mnb_home_grid_drag_n_drop_from (ClutterActor *self,
+    ClutterActor *child,
+    guint x,
+    guint y)
+{
+  ClutterActor *stage;
+  MnbHomeGridPrivate *priv;
+  gfloat child_width, child_height;
+
+  /* be sure it's a MnbHomeWidget, it's a programming error if we obtain
+   * something else */
+  g_assert (MNB_IS_HOME_WIDGET (child));
+
+  priv = self->priv;
+
+  priv->pointer_x = 0;
+  priv->pointer_y = 0;
+
+  priv->selection = child;
+  clutter_actor_raise_top (priv->selection);
+
+  clutter_actor_get_size (child, &child_width, &child_height);
+
+  priv->selection_cols = ceilf (child_width / (UNIT_SIZE + priv->spacing));
+  priv->selection_rows = ceilf (child_height / (UNIT_SIZE + priv->spacing));
+
+  mnb_home_grid_show_hint_position (self,
+      0, 0,
+      priv->selection_cols, priv->selection_rows);
+
+  stage = clutter_actor_get_stage (CLUTTER_ACTOR (self));
+  g_signal_connect (stage, "motion-event",
+      G_CALLBACK (stage_motion_event_cb),
+      self);
+  g_signal_connect (stage, "button-release-event",
+      G_CALLBACK (stage_button_release_event_cb),
+      self);
+
+  g_signal_emit (self, signals[DRAG_BEGIN], 0, priv->selection);
 }
 
 static void
@@ -1039,11 +1084,12 @@ mnb_home_grid_paint (ClutterActor *self)
             }
         }
     }
-  else
+  else /* !edit_mode */
     {
       for (l = priv->children; l != NULL; l = g_list_next (l))
         {
           ClutterActor *child = CLUTTER_ACTOR (l->data);
+          gchar *p;
 
           clutter_actor_get_allocation_box (child, &child_b);
 
@@ -1370,6 +1416,7 @@ void
 mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
 {
   MnbHomeGridPrivate *priv;
+  GList *l = NULL;
 
   g_return_if_fail (MNB_IS_HOME_GRID (self));
 
@@ -1379,6 +1426,16 @@ mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
     return;
 
   priv->in_edit_mode = value;
+  g_object_notify (G_OBJECT (self), "edit-mode");
+
+  /* FIXME: should it be the children to actively connect to grid's
+   * notify::edit-mode? */
+  DEBUG ("children goint to edit-mode %d", value);
+  for (l = priv->children; l != NULL; l = g_list_next (l))
+    g_object_set (G_OBJECT (l->data),
+        "edit-mode", value,
+        NULL);
+
   clutter_actor_queue_redraw (CLUTTER_ACTOR (self));
 }
 

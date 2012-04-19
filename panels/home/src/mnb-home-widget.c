@@ -26,7 +26,8 @@
 
 #include "dawati-home-plugins-app.h"
 
-#define GSETTINGS_PLUGIN_PATH_PREFIX "/org/dawati/shell/home/plugin/"
+#define GSETTINGS_PLUGIN_SCHEMA       "org.dawati.shell.home.plugin"
+#define GSETTINGS_PLUGIN_PATH_PREFIX  "/org/dawati/shell/home/plugin/"
 
 G_DEFINE_TYPE (MnbHomeWidget, mnb_home_widget, MX_TYPE_FRAME);
 
@@ -36,6 +37,7 @@ enum /* properties */
   PROP_ROW,
   PROP_COLUMN,
   PROP_SETTINGS_PATH,
+  PROP_MODULE,
   PROP_EDIT_MODE,
   PROP_LAST
 };
@@ -50,8 +52,11 @@ struct _MnbHomeWidgetPrivate
   guint column;
   gchar *settings_path;
   gboolean edit_mode;
-  char *module;
+  gchar *module;
 };
+
+static void home_widget_set_module (MnbHomeWidget *self, const gchar* module);
+
 
 static void
 mnb_home_widget_get_property (GObject *self,
@@ -64,15 +69,21 @@ mnb_home_widget_get_property (GObject *self,
   switch (prop_id)
     {
       case PROP_ROW:
+        DEBUG ("GET WIDGET ROW %d for %s", priv->row, priv->settings_path);
         g_value_set_uint (value, priv->row);
         break;
 
       case PROP_COLUMN:
+        DEBUG ("GET WIDGET COLUMN %d for %s", priv->column, priv->settings_path);
         g_value_set_uint (value, priv->column);
         break;
 
       case PROP_SETTINGS_PATH:
         g_value_set_string (value, priv->settings_path);
+        break;
+
+      case PROP_MODULE:
+        g_value_set_string (value, priv->module);
         break;
 
       case PROP_EDIT_MODE:
@@ -92,26 +103,29 @@ mnb_home_widget_set_property (GObject *self,
     GParamSpec *pspec)
 {
   MnbHomeWidgetPrivate *priv = MNB_HOME_WIDGET (self)->priv;
-  guint col, row;
 
   switch (prop_id)
     {
       case PROP_ROW:
         priv->row = g_value_get_uint (value);
-        g_settings_set_uint (priv->settings, "row", priv->row);
-        g_object_notify (self, "row");
         DEBUG ("PROP_ROW changed to %d", priv->row);
+        g_object_notify (self, "row");
         break;
 
       case PROP_COLUMN:
         priv->column = g_value_get_uint (value);
-        g_settings_set_uint (priv->settings, "column", priv->column);
-        g_object_notify (self, "column");
         DEBUG ("PROP_COLUMN changed to %d", priv->column);
+        g_object_notify (self, "column");
         break;
 
       case PROP_SETTINGS_PATH:
         priv->settings_path = g_strdup (g_value_get_string (value));
+        g_object_notify (self, "settings-path");
+        break;
+
+      case PROP_MODULE:
+        home_widget_set_module (MNB_HOME_WIDGET (self),
+            g_value_get_string (value));
         break;
 
       case PROP_EDIT_MODE:
@@ -126,12 +140,16 @@ mnb_home_widget_set_property (GObject *self,
 }
 
 static void
-home_widget_module_changed (GSettings *settings,
-    char *key,
-    MnbHomeWidget *self)
+home_widget_set_module (MnbHomeWidget *self,
+    const gchar* module)
 {
+  if (0 == g_strcmp0 (module, self->priv->module))
+    return;
+  DEBUG ("%s -> %s (%s)", self->priv->module, module,
+      self->priv->settings_path);
+
   g_free (self->priv->module);
-  self->priv->module = g_settings_get_string (settings, key);
+  self->priv->module = g_strdup (module);
 
   if (self->priv->app != NULL)
     dawati_home_plugins_app_deinit (self->priv->app);
@@ -140,49 +158,56 @@ home_widget_module_changed (GSettings *settings,
 
   if (STR_EMPTY (self->priv->module))
     {
-      DEBUG ("no module");
+      DEBUG ("no module, going into edit mode (%s)",
+          self->priv->settings_path);
+      mnb_home_widget_set_edit_mode (self, TRUE);
     }
   else
     {
-      DEBUG ("module = '%s'", self->priv->module);
+      DEBUG ("module = '%s' (%s)", self->priv->module,
+          self->priv->settings_path);
 
       if (self->priv->engine == NULL)
         self->priv->engine = mnb_home_plugins_engine_dup ();
 
-      self->priv->app = mnb_home_plugins_engine_create_app (self->priv->engine,
-          self->priv->module, self->priv->settings_path);
+      self->priv->app =
+        mnb_home_plugins_engine_create_app (self->priv->engine,
+            self->priv->module, self->priv->settings_path);
       if (self->priv->app != NULL)
         dawati_home_plugins_app_init (self->priv->app);
     }
 
   /* reload the widget */
   mnb_home_widget_set_edit_mode (self, self->priv->edit_mode);
+
+  g_object_notify (G_OBJECT (self), "module");
 }
 
 static void
 mnb_home_widget_constructed (GObject *self)
 {
   MnbHomeWidgetPrivate *priv = MNB_HOME_WIDGET (self)->priv;
-  gchar *p = NULL;
 
-  g_object_get (self, "settings-path", &p, NULL);
+  DEBUG ("widget path = '%s'", priv->settings_path);
 
-  DEBUG ("widget path = '%s'", p);
-
-  priv->settings = g_settings_new_with_path ("org.dawati.shell.home.plugin",
+  priv->settings = g_settings_new_with_path (GSETTINGS_PLUGIN_SCHEMA,
       priv->settings_path);
 
-  g_signal_connect (priv->settings, "changed::module",
-      G_CALLBACK (home_widget_module_changed), self);
-  home_widget_module_changed (priv->settings, "module",
-      MNB_HOME_WIDGET (self));
+  home_widget_set_module (MNB_HOME_WIDGET (self),
+      g_settings_get_string (priv->settings, "module"));
+  g_settings_bind (priv->settings, "module", self, "module", G_SETTINGS_BIND_DEFAULT);
 
-  /* for now let's not monitor changes, no one else is supposed to change it
-   */
+  /* update from the property to GSettings (in order to store it) */
   priv->column = g_settings_get_uint (priv->settings, "column");
-  g_object_notify (self, "column");
+  g_settings_bind (priv->settings, "column", self, "column", G_SETTINGS_BIND_SET);
+
+  /* update from the property to GSettings (in order to store it) */
   priv->row = g_settings_get_uint (priv->settings, "row");
-  g_object_notify (self, "row");
+  g_settings_bind (priv->settings, "row", self, "row", G_SETTINGS_BIND_SET);
+
+  /* force the widget to go into not-edit-mode */
+  priv->edit_mode = TRUE;
+  mnb_home_widget_set_edit_mode (MNB_HOME_WIDGET (self), FALSE);
 }
 
 static void
@@ -235,12 +260,19 @@ mnb_home_widget_class_init (MnbHomeWidgetClass *klass)
         0, G_MAXUINT, 0,
         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_OBJECT_PATH,
+  g_object_class_install_property (gobject_class, PROP_SETTINGS_PATH,
       g_param_spec_string ("settings-path",
-        "ObjectPath",
+        "GSetting path",
         "The GSettings path for the widget",
         NULL,
         G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class, PROP_MODULE,
+      g_param_spec_string ("module",
+        "plugin module",
+        "The name of the plugin module for the widget",
+        NULL,
+        G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (gobject_class, PROP_EDIT_MODE,
       g_param_spec_boolean ("edit-mode",
@@ -263,7 +295,7 @@ mnb_home_widget_init (MnbHomeWidget *self)
 }
 
 ClutterActor *
-mnb_home_widget_new (const char* path)
+mnb_home_widget_new (const gchar* path)
 {
   return g_object_new (MNB_TYPE_HOME_WIDGET,
       "settings-path", path,
@@ -272,17 +304,16 @@ mnb_home_widget_new (const char* path)
 
 static void
 home_widget_add_module_response (ClutterActor *dialog,
-    const char *module,
+    const gchar *module,
     MnbHomeWidget *self)
 {
   if (!STR_EMPTY (module))
     {
       DEBUG ("Adding widget '%s'", module);
-
-      g_settings_set_string (self->priv->settings, "module", module);
+      home_widget_set_module (self, module);
     }
 
-  clutter_actor_destroy (dialog);
+  g_object_unref (dialog);
   /* FIXME: why do I need this */
   clutter_actor_queue_redraw (clutter_actor_get_stage (CLUTTER_ACTOR (self)));
 }
@@ -306,22 +337,20 @@ static void
 home_widget_remove_module (MxButton *button,
     MnbHomeWidget *self)
 {
-  char *path;
-
-  path = g_strdup_printf (GSETTINGS_PLUGIN_PATH_PREFIX "%u_%u/",
-      self->priv->row, self->priv->column);
-  dconf_recursive_unset (path, NULL);
-
-  g_free (path);
+  dconf_recursive_unset (self->priv->settings_path, NULL);
 }
 
 void
 mnb_home_widget_set_edit_mode (MnbHomeWidget *self,
     gboolean edit_mode)
 {
-  self->priv->edit_mode = edit_mode;
+  //if (edit_mode == self->priv->edit_mode)
+  //  return;
 
-  g_object_notify (G_OBJECT (self), "edit-mode");
+  DEBUG ("%d -> %d for widget %s", self->priv->edit_mode,
+      edit_mode, self->priv->settings_path);
+  self->priv->edit_mode = edit_mode;
+  //g_object_notify (G_OBJECT (self), "edit-mode");
 
   /* FIXME: should hold refs to the actors rather than destroy/recreate them? */
   mx_bin_set_child (MX_BIN (self), NULL);
@@ -363,7 +392,7 @@ mnb_home_widget_set_edit_mode (MnbHomeWidget *self,
                                                    "y-fill", TRUE,
                                                    NULL);
         }
-      else
+      else /* STR_EMPTY (self->priv->module) */
         {
           ClutterActor *button;
 
@@ -376,19 +405,19 @@ mnb_home_widget_set_edit_mode (MnbHomeWidget *self,
 
       clutter_actor_show_all (table);
     }
-  else
+  else /* !edit_mode */
     {
       ClutterActor *widget = NULL;
 
       if (self->priv->app != NULL)
         {
-
           widget = dawati_home_plugins_app_get_widget (self->priv->app);
 
           if (!CLUTTER_IS_ACTOR (widget))
             /* FIXME: make this better */
+            {
             widget = mx_label_new_with_text (_("Broken plugin"));
-
+            }
         }
       else if (!STR_EMPTY (self->priv->module))
         {
