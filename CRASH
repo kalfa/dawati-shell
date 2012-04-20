@@ -1,0 +1,10 @@
+1. add some widgets, I added four:
+
+data/add_plugin.sh foo 6 2
+data/add_plugin.sh foa 10 4
+data/add_plugin.sh fob 10 2
+data/add_plugin.sh foc 10 0
+
+2. run the panel, switch in edit mode, move the mouse over the grid.
+3. run the panel, switch out edit mode, move the mouse over the grid.
+4. repeast 2-3, it shoudl happen soon (usually you don't even need to get to repeat it twice)
