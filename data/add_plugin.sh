@@ -30,6 +30,10 @@ function append_to_list()
 	if grep -q $ITEM <<< $OLD_LIST; then
 		return
 	fi
+	echo $OLD_LIST
+	# gsettigns returns "@as []" if it's an empty list or "['...',...]" if
+	# it's non-emtpy, strip unwanted non-python-like chars
+	OLD_LIST=$(python -c "print \"${OLD_LIST}\".strip('@as ')")
 
 	NEW_LIST=$(python -c "x=${OLD_LIST};x.append('$ITEM');print x")
 	echo $NEW_LIST
