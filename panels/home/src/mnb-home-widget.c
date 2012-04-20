@@ -136,6 +136,8 @@ static void
 home_widget_set_module (MnbHomeWidget *self,
     const gchar *module)
 {
+  DEBUG ("new module '%s', old '%s'",
+      module, self->priv->module);
   if (0 == g_strcmp0 (module, self->priv->module))
     return;
 
@@ -148,15 +150,11 @@ home_widget_set_module (MnbHomeWidget *self,
   if (self->priv->app != NULL)
     dawati_home_plugins_app_deinit (self->priv->app);
 
+  /* Get rid of the old module */
   g_clear_object (&self->priv->app);
 
-  if (STR_EMPTY (self->priv->module))
-    {
-      DEBUG ("no module, going into edit mode (%s)",
-          self->priv->settings_path);
-      mnb_home_widget_set_edit_mode (self, TRUE);
-    }
-  else
+  /* Init new module, if set */
+  if (!STR_EMPTY (self->priv->module))
     {
       DEBUG ("module = '%s' (%s)", self->priv->module,
           self->priv->settings_path);
@@ -171,10 +169,10 @@ home_widget_set_module (MnbHomeWidget *self,
         dawati_home_plugins_app_init (self->priv->app);
     }
 
+  g_object_notify (G_OBJECT (self), "module");
+
   /* reload the widget */
   mnb_home_widget_set_edit_mode (self, self->priv->edit_mode);
-
-  g_object_notify (G_OBJECT (self), "module");
 }
 
 static void
@@ -298,30 +296,50 @@ home_widget_add_module_response (ClutterActor *dialog,
     const gchar *module,
     MnbHomeWidget *self)
 {
+  g_return_if_fail (MNB_IS_HOME_WIDGET (self));
+
   if (!STR_EMPTY (module))
     {
       DEBUG ("Setting module '%s', chosen from dialog", module);
       home_widget_set_module (self, module);
     }
 
-  g_object_unref (dialog);
+  DEBUG ("disconnect handler");
+  g_signal_handlers_disconnect_by_func (dialog,
+      home_widget_add_module_response, self);
+  clutter_actor_destroy (dialog);
+
   /* FIXME: why do I need this */
-  clutter_actor_queue_redraw (clutter_actor_get_stage (CLUTTER_ACTOR (self)));
+  clutter_actor_queue_redraw (
+      clutter_actor_get_stage (CLUTTER_ACTOR (self)));
+}
+
+
+/*
+ * mnb_home_widget_choose_module:
+ * @self: a HomeWidget instance on which the dialog choosen module will be set
+ * @actor: a ClutterActor on which stage the MxDialog will act on */
+void
+mnb_home_widget_choose_module (MnbHomeWidget *self,
+    ClutterActor *actor)
+{
+  ClutterActor *stage;
+  ClutterActor *dialog;
+
+  stage = clutter_actor_get_stage (actor);
+  dialog = mnb_home_new_widget_dialog_new (stage);
+
+  g_signal_connect (dialog, "response",
+      G_CALLBACK (home_widget_add_module_response), self);
+
+  clutter_actor_show (dialog);
 }
 
 static void
 home_widget_add_module (MxButton *button,
     MnbHomeWidget *self)
 {
-  ClutterActor *dialog;
-
-  dialog = mnb_home_new_widget_dialog_new (
-      clutter_actor_get_stage (CLUTTER_ACTOR (button)));
-
-  g_signal_connect (dialog, "response",
-      G_CALLBACK (home_widget_add_module_response), self);
-
-  clutter_actor_show (dialog);
+  mnb_home_widget_choose_module (self, CLUTTER_ACTOR (button));
 }
 
 static void
@@ -335,9 +353,6 @@ void
 mnb_home_widget_set_edit_mode (MnbHomeWidget *self,
     gboolean edit_mode)
 {
-  //if (edit_mode == self->priv->edit_mode)
-  //  return;
-
   DEBUG ("%d -> %d for widget %s", self->priv->edit_mode,
       edit_mode, self->priv->settings_path);
   self->priv->edit_mode = edit_mode;

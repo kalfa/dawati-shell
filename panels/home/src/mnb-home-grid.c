@@ -98,6 +98,23 @@ struct _MnbHomeGridPrivate
   MxAdjustment *hadjustment;
   MxAdjustment *vadjustment;
 
+
+  /* %TRUE when a HomeWidget is being inserted into the grid and it has to be
+   * placed into it (ie it has no col/row set yet), so the grid will allow its
+   * placing. This is meant to allo the _press_event class' handler to be
+   * bypassed if we are in this scenario, since it would catch the button
+   * pressed event, which we need to intercept to allow the user to click on a
+   * free cell.
+   *
+   * FIXME: ugly solution.
+   * We use the press event also when placing a floating widget. To avoid
+   * this handler catches the event, disable it, which is anyway useless, when
+   * we are already trying to place a floating actor */
+  gboolean is_floating;
+
+  gboolean dialog_on;
+  guint dialog_mode_timeout;
+
   guint spacing;
 };
 
@@ -399,7 +416,7 @@ mnb_home_grid_add_actor (ClutterContainer *container,
 {
   MnbHomeGridPrivate *priv = MNB_HOME_GRID (container)->priv;
 
-  clutter_actor_set_parent (actor, CLUTTER_ACTOR (container));
+  clutter_actor_add_child(CLUTTER_ACTOR (container), actor);
 
   priv->children = g_list_append (priv->children, actor);
 
@@ -432,7 +449,7 @@ mnb_home_grid_remove_actor (ClutterContainer *container,
   /*   priv->last_focus = NULL; */
 
   priv->children = g_list_delete_link (priv->children, item);
-  clutter_actor_unparent (actor);
+  clutter_actor_remove_child (CLUTTER_ACTOR (container), actor);
 
   clutter_actor_queue_relayout (CLUTTER_ACTOR (container));
 
@@ -726,6 +743,7 @@ stage_button_release_event_cb (ClutterActor       *stage,
   g_signal_handlers_disconnect_by_func (stage,
                                         G_CALLBACK (stage_button_release_event_cb),
                                         self);
+  priv->is_floating = FALSE;
 
   return TRUE;
 }
@@ -743,6 +761,12 @@ mnb_home_grid_button_press_event (ClutterActor       *self,
   ClutterActor *stage, *child;
 
   if (!(event->button == 1 && priv->in_edit_mode))
+    return
+      CLUTTER_ACTOR_CLASS (mnb_home_grid_parent_class)->button_press_event (self,
+                                                                            event);
+
+  DEBUG ("is_floating %d", priv->is_floating);
+  if (priv->is_floating)
     return
       CLUTTER_ACTOR_CLASS (mnb_home_grid_parent_class)->button_press_event (self,
                                                                             event);
@@ -1059,6 +1083,87 @@ mnb_home_grid_paint (ClutterActor *self)
     }
 }
 
+struct timeout_t { MnbHomeGrid *self; ClutterActor *child; } timeout_t;
+
+static gboolean
+mnb_home_grid_try_to_insert_timeout (gpointer user_data)
+{
+  MnbHomeGrid *grid = ((struct timeout_t *) user_data)->self;
+  ClutterActor *child = ((struct timeout_t *) user_data)->child;
+
+  grid->priv->dialog_on = FALSE;
+
+  mnb_home_grid_try_to_insert (grid, child);
+  g_object_unref (grid);
+  g_object_unref (child);
+  return FALSE;
+}
+
+
+void
+mnb_home_grid_try_to_insert (MnbHomeGrid *self,
+                             ClutterActor *child)
+{
+  MnbHomeGridChild *meta;
+  gfloat child_width, child_height;
+  MnbHomeGridPrivate *priv = self->priv;
+  ClutterActor *stage;
+  gfloat width, height;
+
+  g_return_if_fail (MNB_IS_HOME_WIDGET (child));
+
+  if (priv->dialog_on)
+    {
+      struct timeout_t *data = g_slice_new (struct timeout_t);
+      data->self = g_object_ref (self);
+      data->child = g_object_ref (child);
+      priv->dialog_mode_timeout = g_timeout_add (2000, mnb_home_grid_try_to_insert_timeout, data);
+      return;
+    }
+
+  clutter_container_add_actor (CLUTTER_CONTAINER (self), child);
+  clutter_actor_get_preferred_size (child, NULL, NULL, &width, &height);
+
+  meta = MNB_HOME_GRID_CHILD (clutter_container_get_child_meta (
+          CLUTTER_CONTAINER (self), child));
+  meta->row = 0;
+  meta->col = 0;
+  meta->width = 2; //ceilf (width / (UNIT_SIZE + priv->spacing));
+  meta->height = 2; //ceilf (height / (UNIT_SIZE + priv->spacing));
+
+
+  /* TODO: remove me */
+  clutter_actor_set_size (CLUTTER_ACTOR (child), 138, 138);
+
+  priv->pointer_x = 0;
+  priv->pointer_y = 0;
+
+  priv->selection = child;
+  clutter_actor_raise_top (priv->selection);
+
+  clutter_actor_get_size (child, &child_width, &child_height);
+
+  priv->selection_cols = 2; //ceilf (child_width / (UNIT_SIZE + priv->spacing));
+  priv->selection_rows = 2; //ceilf (child_height / (UNIT_SIZE + priv->spacing));
+
+  mnb_home_grid_show_hint_position (self,
+      meta->col, meta->row,
+      priv->selection_cols, priv->selection_rows);
+
+  stage = clutter_actor_get_stage (CLUTTER_ACTOR (self));
+  g_signal_connect (stage, "motion-event",
+      G_CALLBACK (stage_motion_event_cb),
+      self);
+
+  priv->is_floating = TRUE;
+  g_signal_connect (stage, "button-press-event",
+      G_CALLBACK (stage_button_release_event_cb),
+      self);
+
+  g_signal_emit (self, signals[DRAG_BEGIN], 0, priv->selection);
+}
+
+
 static void
 mnb_home_grid_pick (ClutterActor       *self,
                     const ClutterColor *color)
@@ -1218,6 +1323,12 @@ mnb_home_grid_dispose (GObject *object)
     {
       cogl_object_unref (priv->pipeline);
       priv->pipeline = NULL;
+    }
+
+  if (priv->dialog_mode_timeout > 0)
+    {
+      g_source_remove (priv->dialog_mode_timeout);
+      priv->dialog_mode_timeout = 0;
     }
 
   G_OBJECT_CLASS (mnb_home_grid_parent_class)->dispose (object);
@@ -1511,4 +1622,10 @@ mnb_home_grid_get_grid_size (MnbHomeGrid *self, guint *cols, guint *rows)
     *cols = priv->cols;
   if (rows)
     *rows = priv->rows;
+}
+
+void
+mnb_home_grid_set_dialog_mode (MnbHomeGrid *self, gboolean mode)
+{
+  self->priv->dialog_on = mode;
 }

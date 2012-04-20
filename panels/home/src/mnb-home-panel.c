@@ -60,10 +60,47 @@ struct _MnbHomePanelPrivate
   GList          *widgets;
 };
 
+static gchar*
+give_me_a_random_name (const gchar* prefix)
+{
+  return g_strdup_printf ("%s%u/", prefix, g_random_int ());
+}
+
+static void
+add_widget_clicked (MxButton *button,
+    MnbHomePanel *self)
+{
+  MnbHomePanelPrivate *priv = self->priv;
+  ClutterActor *widget;
+  gchar *path;
+
+  path = give_me_a_random_name (GSETTINGS_HOME_PATH_PREFIX "plugin/");
+
+  DEBUG ("PATH %s", path);
+
+  widget = mnb_home_widget_new (path);
+  mnb_home_widget_choose_module (MNB_HOME_WIDGET (widget),
+      CLUTTER_ACTOR (self));
+
+  mnb_home_grid_set_dialog_mode (MNB_HOME_GRID (priv->grid), TRUE);
+  mnb_home_grid_try_to_insert (MNB_HOME_GRID (priv->grid), widget);
+
+  g_free (path);
+}
+
 static void
 toggle_edit_mode (MxButton *button, MnbHomePanel *self)
 {
   MnbHomePanelPrivate *priv = self->priv;
+  ClutterActor *add_widget;
+
+  add_widget = clutter_container_find_child_by_name (CLUTTER_CONTAINER (priv->vbox), "add");
+  g_assert (MX_IS_BUTTON (add_widget));
+
+  if (mx_button_get_toggled (button))
+    clutter_actor_show (add_widget);
+  else
+    clutter_actor_hide (add_widget);
 
   mnb_home_grid_set_edit_mode (MNB_HOME_GRID (priv->grid),
                                mx_button_get_toggled (button));
@@ -336,10 +373,39 @@ mnb_home_panel_class_init (MnbHomePanelClass *klass)
 }
 
 static void
+widget_module_changed (MnbHomeWidget *widget,
+    GParamSpec *param,
+    gpointer user_data)
+{
+  MnbHomePanel *self = user_data;
+  const gchar *module;
+
+  g_return_if_fail (MNB_IS_HOME_PANEL (self));
+  g_return_if_fail (MNB_IS_HOME_WIDGET (widget));
+
+  g_object_get (G_OBJECT (widget),
+      "module", &module,
+      NULL);
+
+  DEBUG ("module changed to %s", module);
+
+  if (STR_EMPTY (module))
+    {
+      g_signal_handlers_disconnect_by_func (widget, widget_module_changed,
+          self);
+      clutter_actor_remove_child (self->priv->grid, CLUTTER_ACTOR (widget));
+      self->priv->widgets = g_list_remove (self->priv->widgets, widget);
+
+      g_object_unref (widget);
+      g_object_unref (self);
+    }
+}
+
+static void
 mnb_home_panel_init (MnbHomePanel *self)
 {
   MnbHomePanelPrivate *priv;
-  ClutterActor *edit, *item, *box;
+  ClutterActor *edit, *item, *box, *add_widget;
   GVariant *as;
   GVariantIter iter;
   guint col, row;
@@ -434,6 +500,25 @@ mnb_home_panel_init (MnbHomePanel *self)
                     G_CALLBACK (toggle_edit_mode),
                     self);
 
+  /* Add widget */
+  add_widget = mx_button_new_with_label (_("+"));
+  clutter_actor_set_name (add_widget, "add");
+  /* start in non-edit mode, hide it */
+  clutter_actor_hide (add_widget);
+  mx_button_set_is_toggle (MX_BUTTON (add_widget), FALSE);
+  mx_box_layout_insert_actor_with_properties (MX_BOX_LAYOUT (priv->vbox),
+                                              add_widget,
+                                              3,
+                                              "expand", FALSE,
+                                              "x-fill", FALSE,
+                                              "y-fill", FALSE,
+                                              NULL);
+
+  g_signal_connect (add_widget, "clicked",
+                    G_CALLBACK (add_widget_clicked),
+                    self);
+
+
   /* Load all widgets added to the panel */
   as = g_settings_get_value (priv->settings, "widgets-list");
 
@@ -447,6 +532,9 @@ mnb_home_panel_init (MnbHomePanel *self)
        * resonable default */
       clutter_actor_set_size (item, 138, 138);
 
+      g_signal_connect (item, "notify::module",
+                        G_CALLBACK (widget_module_changed),
+                        g_object_ref (self));
       mnb_home_grid_insert_actor (MNB_HOME_GRID (priv->grid), item, col, row);
       priv->widgets = g_list_prepend (priv->widgets, item);
 

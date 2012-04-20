@@ -84,7 +84,8 @@ gboolean mnb_home_grid_get_edit_mode (MnbHomeGrid *self);
 
 void     mnb_home_grid_set_grid_size (MnbHomeGrid *grid, guint cols, guint rows);
 void     mnb_home_grid_get_grid_size (MnbHomeGrid *grid, guint *cols, guint *rows);
-
+void     mnb_home_grid_try_to_insert (MnbHomeGrid *grid, ClutterActor *actor);
+void     mnb_home_grid_set_dialog_mode (MnbHomeGrid *self, gboolean mode);
 
 G_END_DECLS
 
