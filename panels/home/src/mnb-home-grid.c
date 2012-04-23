@@ -1370,6 +1370,7 @@ void
 mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
 {
   MnbHomeGridPrivate *priv;
+  GList *l = NULL;
 
   g_return_if_fail (MNB_IS_HOME_GRID (self));
 
@@ -1379,6 +1380,15 @@ mnb_home_grid_set_edit_mode (MnbHomeGrid *self, gboolean value)
     return;
 
   priv->in_edit_mode = value;
+  g_object_notify (G_OBJECT (self), "edit-mode");
+
+  /* FIXME: should it be the children to actively connect to grid's
+   * notify::edit-mode? */
+  for (l = priv->children; l != NULL; l = g_list_next (l))
+    g_object_set (G_OBJECT (l->data),
+        "edit-mode", value,
+        NULL);
+
   clutter_actor_queue_redraw (CLUTTER_ACTOR (self));
 }
 
